@@ -11,6 +11,32 @@ Horizon is configured through two files: a `.env` file for API keys and a `data/
 
 Configure which AI model scores and summarizes your content.
 
+`api_key_env` is always an environment variable name, not the API key value.
+Store secrets in `.env` or your shell environment, then point `api_key_env` at
+that variable:
+
+```bash
+OPENAI_API_KEY=sk-your-key
+GOOGLE_API_KEY=your-gemini-key
+```
+
+When Horizon starts, environment variables have priority because
+`data/config.json` does not store the secret. For local VS Code runs, create
+`.env` in the repository root and launch Horizon from that same root directory.
+
+Common API key variable names:
+
+| Provider | `api_key_env` value |
+| --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` |
+| Gemini | `GOOGLE_API_KEY` |
+| MiniMax | `MINIMAX_API_KEY` |
+| Aliyun DashScope | `DASHSCOPE_API_KEY` |
+| Doubao | `DOUBAO_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` |
+
 **Anthropic Claude**:
 
 ```json
@@ -32,6 +58,19 @@ Configure which AI model scores and summarizes your content.
     "provider": "openai",
     "model": "gpt-4",
     "api_key_env": "OPENAI_API_KEY",
+    "throttle_sec": 0
+  }
+}
+```
+
+**Gemini**:
+
+```json
+{
+  "ai": {
+    "provider": "gemini",
+    "model": "gemini-2.0-flash",
+    "api_key_env": "GOOGLE_API_KEY",
     "throttle_sec": 0
   }
 }
@@ -60,14 +99,14 @@ Set `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` in your `.env`. The `mode
 {
   "ai": {
     "provider": "minimax",
-    "model": "MiniMax-M2.7",
+    "model": "MiniMax-M3",
     "api_key_env": "MINIMAX_API_KEY",
     "throttle_sec": 0
   }
 }
 ```
 
-Available models: `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5`, `MiniMax-M2.5-highspeed`
+Available models: `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`
 
 **Aliyun DashScope** (OpenAI-compatible):
 
@@ -368,6 +407,53 @@ Content is scored 0-10:
 
 - `ai_score_threshold`: Only include content scoring >= this value
 - `time_window_hours`: Fetch content from last N hours
+
+## Personal Scoring Profile
+
+Horizon's default scorer uses a generic technical-news rubric. You can optionally add a top-level `scoring` block to refine that rubric toward your own interests without changing the output schema.
+
+```json
+{
+  "scoring": {
+    "profile_name": "personal",
+    "primary": [
+      "cognitive value",
+      "paradigm shifts",
+      "transferable insights"
+    ],
+    "secondary": [
+      "engineering usefulness",
+      "automation workflows",
+      "developer productivity"
+    ],
+    "boost": [
+      "changes how I think about AI, products, engineering, or work",
+      "contains durable mental models or decision frameworks",
+      "reveals a structural trend or shift",
+      "has actionable engineering or automation lessons"
+    ],
+    "downrank": [
+      "generic AI hype",
+      "thin product announcements",
+      "funding news without technical or strategic signal",
+      "tutorials without novelty",
+      "engagement without substance"
+    ],
+    "notes": "Prefer cognitive value first, practical engineering value second."
+  }
+}
+```
+
+- `profile_name`: Human-readable name for the profile.
+- `primary`: Strongest signals for 8-10 scores.
+- `secondary`: Supporting signals for high scores.
+- `boost`: Specific qualities that should raise an item's score.
+- `downrank`: Qualities that should lower an item's score.
+- `notes`: Free-form preference guidance.
+
+All fields except `profile_name` are optional; empty arrays, blank strings, and `null` notes are ignored. Each preference list accepts up to 12 non-empty items, each item can be up to 160 characters, `notes` can be up to 600 characters, and `profile_name` can be up to 80 characters.
+
+The profile refines the default rubric; it does not replace basic quality checks such as novelty, substance, relevance, and discussion quality.
 
 ## Environment Variable Substitution
 

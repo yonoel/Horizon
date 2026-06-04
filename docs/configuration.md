@@ -612,7 +612,7 @@ Example `summary_and_items` Markdown delivery config:
 }
 ```
 
-With `summary_and_items`, Horizon sends one overview plus one message per selected item. `overview_position: "last"` sends item messages first and keeps the overview as the newest chat message; omit it or set `"first"` to send the overview first. Set `max_items` to send only the highest-scored items, `pages_url` to append a link to the published GitHub Pages summary, and `send_interval_sec` to avoid platform frequency limits. `message_title` can force a fixed chat/card title, but keep it `null` when the webhook relies on title keywords for whitelist checks.
+With `summary_and_items`, Horizon sends one overview plus one message per selected item. `overview_position: "last"` sends item messages first and keeps the overview as the newest chat message; omit it or set `"first"` to send the overview first. Set `max_items` to send detailed messages only for the highest-scored items while the overview still lists all items that passed the score threshold. Use `pages_url` to append a link to the published GitHub Pages summary, and `send_interval_sec` to avoid platform frequency limits. `message_title` can force a fixed chat/card title, but keep it `null` when the webhook relies on title keywords for whitelist checks.
 
 ### Webhook Templates
 

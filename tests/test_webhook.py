@@ -983,8 +983,8 @@ class TestSendDailySummary:
             assert third_vars["message_title"] == "Horizon 2026-04-24 Overview"
         del os.environ[_TEST_URL_ENV]
 
-    def test_feishu_summary_and_items_keeps_titles_top_three_and_pages_link(self):
-        """Feishu summary_and_items keeps original titles, sends top 3, and links Pages."""
+    def test_feishu_summary_and_items_limits_details_not_overview(self):
+        """Feishu summary_and_items sends top 3 details but keeps full overview."""
         os.environ[_TEST_URL_ENV] = _TEST_URL
         config = WebhookConfig(
             enabled=True,
@@ -1038,7 +1038,8 @@ class TestSendDailySummary:
             overview_vars = sent_vars[-1]
             assert overview_vars["message_kind"] == "overview"
             assert "https://yonoel.github.io/Horizon/" in overview_vars["summary"]
-            assert "Score 7" not in overview_vars["summary"]
+            assert "筛选出 4 条重要资讯" in overview_vars["summary"]
+            assert "Score 7" in overview_vars["summary"]
             assert mock_sleep.call_count == 3
             assert all(call[0][0] == 1.5 for call in mock_sleep.call_args_list)
         del os.environ[_TEST_URL_ENV]

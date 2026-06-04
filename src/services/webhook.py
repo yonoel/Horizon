@@ -571,7 +571,7 @@ class WebhookNotifier:
             fixed_message_title = _default_message_title(self.config)
             item_messages: List[dict[str, Any]] = []
             overview = summarizer.generate_webhook_overview(
-                selected_items,
+                important_items,
                 date,
                 all_items_count,
                 language=lang,

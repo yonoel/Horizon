@@ -555,6 +555,7 @@ Webhook notification is optional and disabled unless `webhook.enabled` is `true`
     "layout": "markdown",
     "fallback_layout": "markdown",
     "languages": null,
+    "targets": null,
     "request_body": {
       "text": "#{message_title}\n#{summary}"
     },
@@ -565,6 +566,7 @@ Webhook notification is optional and disabled unless `webhook.enabled` is `true`
 
 - `enabled`: Turns webhook delivery on or off. The default is `false`.
 - `url_env`: Environment variable that contains the webhook URL. For example, set `HORIZON_WEBHOOK_URL=https://...` in `.env`.
+- `targets`: Optional list of webhook targets. Each target inherits the shared webhook settings and overrides only `url_env`. If `targets` is omitted, `null`, or empty, Horizon uses the legacy single `url_env` target.
 - `delivery`: Controls how messages are sent. Use `summary` for one full message, or `summary_and_items` for one overview message followed by one message per selected item.
 - `overview_position`: Controls where the overview is sent in `summary_and_items` mode. Use `first` for the traditional order, or `last` to send item details in reverse and keep the overview as the newest chat message.
 - `platform`: Optional webhook platform hint. Use `generic` by default, or `feishu` / `lark` to enable platform-specific card rendering.
@@ -613,6 +615,46 @@ Example `summary_and_items` Markdown delivery config:
 ```
 
 With `summary_and_items`, Horizon sends one overview plus one message per selected item. `overview_position: "last"` sends item messages first and keeps the overview as the newest chat message; omit it or set `"first"` to send the overview first. Set `max_items` to send detailed messages only for the highest-scored items while the overview still lists all items that passed the score threshold. Use `pages_url` to append a link to the published GitHub Pages summary, and `send_interval_sec` to avoid platform frequency limits. `message_title` can force a fixed chat/card title, but keep it `null` when the webhook relies on title keywords for whitelist checks.
+
+To send the same rendered webhook messages to multiple chat robots, add
+`targets`. Keep the actual URLs in environment variables or GitHub Secrets:
+
+```json
+{
+  "webhook": {
+    "enabled": true,
+    "url_env": "HORIZON_WEBHOOK_URL",
+    "delivery": "summary_and_items",
+    "overview_position": "last",
+    "platform": "feishu",
+    "layout": "markdown",
+    "targets": [
+      {
+        "name": "main-feishu",
+        "url_env": "HORIZON_WEBHOOK_URL"
+      },
+      {
+        "name": "backup-feishu",
+        "url_env": "HORIZON_WEBHOOK_URL_2"
+      }
+    ],
+    "request_body": {
+      "msg_type": "interactive",
+      "card": {
+        "schema": "2.0",
+        "body": {
+          "elements": [
+            {
+              "tag": "markdown",
+              "content": "Horizon #{date}\n\n#{summary}"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
 
 ### Webhook Templates
 

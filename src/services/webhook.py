@@ -293,11 +293,62 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
     }
 
 
+def build_webhook_notifiers(
+    config: WebhookConfig,
+    console=None,
+) -> list["WebhookNotifier"]:
+    """Build one notifier per configured webhook target.
+
+    Legacy single-target configs keep using ``webhook.url_env``. When
+    ``webhook.targets`` is present, each target inherits the shared webhook
+    template/delivery settings and overrides only ``url_env``.
+    """
+    if not config.enabled:
+        return []
+
+    targets = getattr(config, "targets", None) or []
+    if not targets:
+        return [WebhookNotifier(config, console=console)]
+
+    notifiers: list[WebhookNotifier] = []
+    for target in targets:
+        target_config = config.model_copy(
+            update={
+                "url_env": target.url_env,
+                "targets": None,
+            }
+        )
+        target_name = target.name or target.url_env
+        try:
+            notifiers.append(
+                WebhookNotifier(
+                    target_config,
+                    console=console,
+                    target_name=target_name,
+                )
+            )
+        except ValueError as e:
+            logger.error("Invalid webhook target '%s': %s", target_name, e)
+            if console:
+                console.print(
+                    f"[red]Webhook target '{target_name}' is invalid and will be skipped: "
+                    f"{e}[/red]"
+                )
+
+    return notifiers
+
+
 class WebhookNotifier:
     """Sends webhook notifications after pipeline completion or failure."""
 
-    def __init__(self, config: WebhookConfig, console=None):
+    def __init__(
+        self,
+        config: WebhookConfig,
+        console=None,
+        target_name: str | None = None,
+    ):
         self.config = config
+        self.target_name = target_name
         if console is None:
             try:
                 from rich.console import Console

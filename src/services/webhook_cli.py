@@ -14,7 +14,7 @@ from rich.panel import Panel
 from ..ai.summarizer import DailySummarizer
 from ..models import ContentItem, SourceType
 from ..storage.manager import ConfigError, StorageManager
-from .webhook import WebhookNotifier
+from .webhook import WebhookNotifier, build_webhook_notifiers
 
 console = Console()
 
@@ -99,17 +99,21 @@ async def _run_test(
             update={"delivery": delivery_override}
         )
 
-    notifier = WebhookNotifier(effective_config, console=console)
+    notifiers = build_webhook_notifiers(effective_config, console=console)
+    if not notifiers:
+        console.print("[yellow]No valid webhook targets are available.[/yellow]")
+        return
 
     if dry_run:
         console.print(f"\n[bold yellow]── Dry Run (lang={lang}) ──[/bold yellow]")
         console.print(f"  [cyan]Webhook enabled:[/cyan] {effective_config.enabled}")
         console.print(f"  [cyan]URL env var:[/cyan] {effective_config.url_env}")
+        console.print(f"  [cyan]Targets:[/cyan] {len(notifiers)}")
         console.print(f"  [cyan]Delivery mode:[/cyan] {effective_config.delivery}")
         console.print(f"  [cyan]Platform:[/cyan] {effective_config.platform}")
         console.print(f"  [cyan]Layout:[/cyan] {effective_config.layout}")
 
-        messages = notifier.build_daily_summary_messages(
+        messages = notifiers[0].build_daily_summary_messages(
             summary=summary,
             important_items=items,
             all_items_count=len(items),
@@ -132,26 +136,36 @@ async def _run_test(
                 else f"Message {index}"
             )
             console.print(f"\n[bold]── {label}: {message['message_kind']} ──[/bold]")
-            _preview_message(
-                notifier=notifier,
-                title=message["message_title"],
-                body=message["summary"],
-                variables=message,
-                border_style="blue" if message["message_kind"] != "item" else "green",
-            )
+            for target_index, notifier in enumerate(notifiers, start=1):
+                target_name = (
+                    notifier.target_name or notifier.config.url_env or "default"
+                )
+                console.print(
+                    f"\n[bold]Target {target_index}: {target_name}[/bold]"
+                )
+                _preview_message(
+                    notifier=notifier,
+                    title=message["message_title"],
+                    body=message["summary"],
+                    variables=message,
+                    border_style=(
+                        "blue" if message["message_kind"] != "item" else "green"
+                    ),
+                )
 
         console.print("\n[green]Dry run complete. No notification was sent.[/green]")
         return
 
     console.print(f"\n[bold]── Sending Test Notification (lang={lang}) ──[/bold]")
-    await notifier.send_daily_summary(
-        summary=summary,
-        important_items=items,
-        all_items_count=len(items),
-        date=today,
-        lang=lang,
-        summarizer=summarizer,
-    )
+    for notifier in notifiers:
+        await notifier.send_daily_summary(
+            summary=summary,
+            important_items=items,
+            all_items_count=len(items),
+            date=today,
+            lang=lang,
+            summarizer=summarizer,
+        )
 
 
 def main() -> None:

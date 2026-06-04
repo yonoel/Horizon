@@ -11,7 +11,7 @@ from rich.console import Console
 from .models import Config, ContentItem
 from .storage.manager import StorageManager
 from .services.email import EmailManager
-from .services.webhook import WebhookNotifier
+from .services.webhook import build_webhook_notifiers
 from .scrapers.github import GitHubScraper
 from .scrapers.hackernews import HackerNewsScraper
 from .scrapers.rss import RSSScraper
@@ -41,10 +41,10 @@ class HorizonOrchestrator:
         self.storage = storage
         self.console = Console()
         self.email_manager = EmailManager(config.email, console=self.console) if config.email else None
-        self.webhook_notifier = (
-            WebhookNotifier(config.webhook, console=self.console)
+        self.webhook_notifiers = (
+            build_webhook_notifiers(config.webhook, console=self.console)
             if config.webhook and config.webhook.enabled
-            else None
+            else []
         )
 
     async def run(self, force_hours: int = None) -> None:
@@ -179,8 +179,8 @@ class HorizonOrchestrator:
                     self.email_manager.send_daily_summary(summary, subject, subscribers)
 
                 # Send webhook notification if configured
-                if self.webhook_notifier:
-                    await self.webhook_notifier.send_daily_summary(
+                for webhook_notifier in self.webhook_notifiers:
+                    await webhook_notifier.send_daily_summary(
                         summary=summary,
                         important_items=important_items,
                         all_items_count=len(all_items),
@@ -209,8 +209,8 @@ class HorizonOrchestrator:
             self.console.print(f"[bold red]❌ Error: {e}[/bold red]")
 
             # Send webhook failure notification if configured
-            if self.webhook_notifier:
-                await self.webhook_notifier.send_failure(
+            for webhook_notifier in self.webhook_notifiers:
+                await webhook_notifier.send_failure(
                     date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                     error_message=str(e),
                 )

@@ -126,6 +126,7 @@
     "pages_url": null,
     "send_interval_sec": null,
     "languages": null,
+    "targets": null,
     "request_body": {
       "msg_type": "interactive",
       "card": {

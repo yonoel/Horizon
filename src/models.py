@@ -225,6 +225,21 @@ class SourcesConfig(BaseModel):
     ossinsight: OSSInsightConfig = Field(default_factory=OSSInsightConfig)
 
 
+class WebhookTargetConfig(BaseModel):
+    """One webhook delivery target within a shared webhook configuration."""
+
+    name: Optional[str] = None
+    url_env: str
+
+    @field_validator("url_env")
+    @classmethod
+    def validate_url_env(cls, v: str) -> str:
+        value = v.strip()
+        if not value:
+            raise ValueError("webhook.targets[].url_env must not be empty")
+        return value
+
+
 class WebhookConfig(BaseModel):
     """Webhook notification configuration."""
 
@@ -248,6 +263,9 @@ class WebhookConfig(BaseModel):
     send_interval_sec: Optional[float] = None  # Optional delay between multi-message sends
     languages: Optional[List[str]] = (
         None  # Optional language filter for webhook delivery; defaults to all AI languages
+    )
+    targets: Optional[List[WebhookTargetConfig]] = (
+        None  # Optional multiple delivery targets; each target overrides url_env
     )
     enabled: bool = False
 

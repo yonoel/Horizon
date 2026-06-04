@@ -10,9 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 from pydantic import ValidationError
 
-from src.models import ContentItem, SourceType, WebhookConfig
+from src.models import ContentItem, SourceType, WebhookConfig, WebhookTargetConfig
 from src.services.webhook import (
     WebhookNotifier,
+    build_webhook_notifiers,
     _format_markdown_for_webhook,
     _prepare_variables_for_body,
     _render,
@@ -25,7 +26,9 @@ from src.services.webhook import (
 from src.ai.summarizer import DailySummarizer
 
 _TEST_URL_ENV = "TEST_WEBHOOK_URL"
+_TEST_URL_ENV_2 = "TEST_WEBHOOK_URL_2"
 _TEST_URL = "https://example.com/webhook"
+_TEST_URL_2 = "https://example.com/webhook-2"
 
 
 # ── Template variable replacement ──
@@ -421,6 +424,80 @@ def _run_async(coro):
 
 
 class TestWebhookNotifier:
+    def test_build_notifiers_uses_legacy_single_target(self):
+        os.environ[_TEST_URL_ENV] = _TEST_URL
+        config = WebhookConfig(enabled=True, url_env=_TEST_URL_ENV)
+
+        notifiers = build_webhook_notifiers(config)
+
+        assert len(notifiers) == 1
+        assert notifiers[0].config.url_env == _TEST_URL_ENV
+        assert notifiers[0].url == _TEST_URL
+        assert notifiers[0].target_name is None
+        del os.environ[_TEST_URL_ENV]
+
+    def test_build_notifiers_expands_targets(self):
+        os.environ[_TEST_URL_ENV] = _TEST_URL
+        os.environ[_TEST_URL_ENV_2] = _TEST_URL_2
+        config = WebhookConfig(
+            enabled=True,
+            url_env=_TEST_URL_ENV,
+            targets=[
+                WebhookTargetConfig(name="main", url_env=_TEST_URL_ENV),
+                WebhookTargetConfig(name="backup", url_env=_TEST_URL_ENV_2),
+            ],
+        )
+
+        notifiers = build_webhook_notifiers(config)
+
+        assert len(notifiers) == 2
+        assert [notifier.target_name for notifier in notifiers] == ["main", "backup"]
+        assert [notifier.config.url_env for notifier in notifiers] == [
+            _TEST_URL_ENV,
+            _TEST_URL_ENV_2,
+        ]
+        assert [notifier.url for notifier in notifiers] == [_TEST_URL, _TEST_URL_2]
+        assert all(notifier.config.targets is None for notifier in notifiers)
+        del os.environ[_TEST_URL_ENV]
+        del os.environ[_TEST_URL_ENV_2]
+
+    def test_targets_send_to_each_configured_url(self):
+        os.environ[_TEST_URL_ENV] = _TEST_URL
+        os.environ[_TEST_URL_ENV_2] = _TEST_URL_2
+        config = WebhookConfig(
+            enabled=True,
+            url_env=_TEST_URL_ENV,
+            request_body={"text": "#{summary}"},
+            targets=[
+                WebhookTargetConfig(name="main", url_env=_TEST_URL_ENV),
+                WebhookTargetConfig(name="backup", url_env=_TEST_URL_ENV_2),
+            ],
+        )
+        notifiers = build_webhook_notifiers(config)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            for notifier in notifiers:
+                _run_async(notifier.notify({"summary": "Horizon summary"}))
+
+            assert mock_client.post.call_count == 2
+            assert [call.args[0] for call in mock_client.post.call_args_list] == [
+                _TEST_URL,
+                _TEST_URL_2,
+            ]
+
+        del os.environ[_TEST_URL_ENV]
+        del os.environ[_TEST_URL_ENV_2]
+
     def test_disabled_skips(self):
         config = WebhookConfig(enabled=False, url_env=_TEST_URL_ENV)
         os.environ[_TEST_URL_ENV] = _TEST_URL
@@ -795,6 +872,27 @@ class TestWebhookConfigModel:
         assert config.layout == "collapsible"
         assert config.fallback_layout == "markdown"
         assert config.languages == ["zh"]
+
+    def test_targets_config(self):
+        config = WebhookConfig(
+            enabled=True,
+            url_env="HORIZON_WEBHOOK_URL",
+            targets=[
+                WebhookTargetConfig(name="main", url_env="HORIZON_WEBHOOK_URL"),
+                WebhookTargetConfig(name="backup", url_env="HORIZON_WEBHOOK_URL_2"),
+            ],
+        )
+
+        assert config.targets is not None
+        assert [target.name for target in config.targets] == ["main", "backup"]
+        assert [target.url_env for target in config.targets] == [
+            "HORIZON_WEBHOOK_URL",
+            "HORIZON_WEBHOOK_URL_2",
+        ]
+
+    def test_target_url_env_must_not_be_empty(self):
+        with pytest.raises(ValidationError):
+            WebhookTargetConfig(url_env=" ")
 
 
 # ── Helper to build a ContentItem for testing ──

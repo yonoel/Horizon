@@ -2,7 +2,7 @@ name: Daily Horizon Summary
 
 on:
   schedule:
-    - cron: '0 0 * * 1,4'  # Runs Mon/Thu at 08:00 Asia/Shanghai
+    - cron: '15 23 * * 0,3'  # Runs Mon/Thu at 07:15 Asia/Shanghai
   workflow_dispatch:      # Allow manual trigger
 
 jobs:

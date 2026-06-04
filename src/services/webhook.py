@@ -489,6 +489,8 @@ class WebhookNotifier:
         delivery = getattr(self.config, "delivery", "summary")
         if delivery == "summary_and_items":
             item_messages: List[dict[str, Any]] = []
+            max_items = getattr(self.config, "max_items", None)
+            detail_items = important_items[:max_items] if max_items else important_items
             overview = summarizer.generate_webhook_overview(
                 important_items,
                 date,
@@ -505,21 +507,21 @@ class WebhookNotifier:
                 "message_kind": "overview",
                 "summary": overview,
             }
-            for item_index, item in enumerate(important_items, start=1):
+            for item_index, item in enumerate(detail_items, start=1):
                 title = str(item.metadata.get(f"title_{lang}") or item.title)
                 item_summary = summarizer.generate_webhook_item(
                     item,
                     language=lang,
                     index=item_index,
-                    total=len(important_items),
+                    total=len(detail_items),
                 )
                 item_messages.append(
                     {
                         **base_vars,
-                        "message_title": f"{item_index}/{len(important_items)} {title}",
+                        "message_title": f"{item_index}/{len(detail_items)} {title}",
                         "message_kind": "item",
                         "item_index": item_index,
-                        "item_count": len(important_items),
+                        "item_count": len(detail_items),
                         "item_title": title,
                         "item_url": str(item.url),
                         "item_score": item.ai_score or "",

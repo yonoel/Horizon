@@ -782,6 +782,7 @@ class TestWebhookConfigModel:
             headers="Authorization: Bearer xxx",
             delivery="summary_and_items",
             overview_position="last",
+            max_items=3,
             platform="feishu",
             layout="collapsible",
             fallback_layout="markdown",
@@ -791,10 +792,15 @@ class TestWebhookConfigModel:
         assert config.url_env == "HORIZON_WEBHOOK_URL"
         assert config.delivery == "summary_and_items"
         assert config.overview_position == "last"
+        assert config.max_items == 3
         assert config.platform == "feishu"
         assert config.layout == "collapsible"
         assert config.fallback_layout == "markdown"
         assert config.languages == ["zh"]
+
+    def test_invalid_max_items_raises_validation_error(self):
+        with pytest.raises(ValidationError, match="max_items"):
+            WebhookConfig(enabled=True, max_items=0)
 
 
 # ── Helper to build a ContentItem for testing ──
@@ -975,6 +981,47 @@ class TestSendDailySummary:
             assert second_vars["item_url"] == "https://example.com/test"
             assert third_vars["message_kind"] == "overview"
             assert third_vars["message_title"] == "Horizon 2026-04-24 Overview"
+        del os.environ[_TEST_URL_ENV]
+
+    def test_summary_and_items_max_items_limits_details_not_overview(self):
+        """max_items caps item messages while overview still lists every important item."""
+        os.environ[_TEST_URL_ENV] = _TEST_URL
+        config = WebhookConfig(
+            enabled=True,
+            url_env=_TEST_URL_ENV,
+            delivery="summary_and_items",
+            overview_position="last",
+            max_items=3,
+        )
+        notifier = WebhookNotifier(config)
+        summarizer = DailySummarizer()
+        items = [
+            _make_item(title=f"Item {idx}", url=f"https://example.com/{idx}")
+            for idx in range(1, 6)
+        ]
+
+        with patch.object(notifier, "notify", new_callable=AsyncMock) as mock_notify:
+            _run_async(
+                notifier.send_daily_summary(
+                    summary="# Full summary",
+                    important_items=items,
+                    all_items_count=20,
+                    date="2026-04-24",
+                    lang="en",
+                    summarizer=summarizer,
+                )
+            )
+
+            assert mock_notify.call_count == 4
+            detail_vars = [call[0][0] for call in mock_notify.call_args_list[:3]]
+            overview_vars = mock_notify.call_args_list[3][0][0]
+
+            assert [v["message_kind"] for v in detail_vars] == ["item", "item", "item"]
+            assert [v["item_title"] for v in detail_vars] == ["Item 3", "Item 2", "Item 1"]
+            assert all(v["item_count"] == 3 for v in detail_vars)
+            assert overview_vars["message_kind"] == "overview"
+            assert "Selected 5 important items from 20 fetched items" in overview_vars["summary"]
+            assert "5. [Item 5](https://example.com/5)" in overview_vars["summary"]
         del os.environ[_TEST_URL_ENV]
 
     def test_feishu_collapsible_layout_builds_single_card_message(self):

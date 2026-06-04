@@ -118,6 +118,7 @@
     "url_env": "HORIZON_WEBHOOK_URL",
     "delivery": "summary",
     "overview_position": "first",
+    "max_items": null,
     "platform": "generic",
     "layout": "markdown",
     "fallback_layout": "markdown",

@@ -237,6 +237,9 @@ class WebhookConfig(BaseModel):
     headers: Optional[str] = None  # Custom headers, "Key: Value" per line
     delivery: str = "summary"  # summary, or summary_and_items
     overview_position: str = "first"  # For summary_and_items: first, or last
+    max_items: Optional[int] = (
+        None  # Optional cap for per-item webhook detail messages; overview still lists all important items
+    )
     platform: str = "generic"  # generic, feishu, lark, dingtalk, slack, discord
     layout: str = "markdown"  # markdown, or collapsible
     fallback_layout: str = (
@@ -289,6 +292,13 @@ class WebhookConfig(BaseModel):
             raise ValueError(
                 f"webhook.overview_position must be one of {allowed}, got '{v}'"
             )
+        return v
+
+    @field_validator("max_items")
+    @classmethod
+    def validate_max_items(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 1:
+            raise ValueError("webhook.max_items must be greater than 0")
         return v
 
 

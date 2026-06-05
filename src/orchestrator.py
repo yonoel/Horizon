@@ -1,9 +1,11 @@
 """Main orchestrator coordinating the entire workflow."""
 
 import asyncio
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict
+from pathlib import Path
+from typing import Any, List, Dict
 from urllib.parse import urlparse
 import httpx
 from rich.console import Console
@@ -127,10 +129,13 @@ class HorizonOrchestrator:
             await self._enrich_important_items(important_items)
 
             # 7. Generate and save daily summaries for each configured language
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            run_at = datetime.now(timezone.utc)
+            today = run_at.strftime("%Y-%m-%d")
+            summary_exports: dict[str, str] = {}
             for lang in self.config.ai.languages:
                 summarizer = DailySummarizer()
                 summary = await summarizer.generate_summary(important_items, today, len(all_items), language=lang)
+                summary_exports[lang] = summary
 
                 # Save to data/summaries/
                 summary_path = self.storage.save_daily_summary(today, summary, language=lang)
@@ -189,6 +194,20 @@ class HorizonOrchestrator:
                         summarizer=summarizer,
                     )
 
+            try:
+                payload = self._build_run_json_payload(
+                    date=today,
+                    run_at=run_at,
+                    items=important_items,
+                    summaries=summary_exports,
+                )
+                paths = self._write_run_json_exports(payload=payload)
+                self.console.print(
+                    f"🧾 Exported run JSON to: {paths['dated']} and {paths['latest']}\n"
+                )
+            except Exception as e:
+                self.console.print(f"[yellow]⚠️  Failed to export run JSON: {e}[/yellow]\n")
+
             self.console.print("[bold green]✅ Horizon completed successfully![/bold green]")
             usage = get_usage_snapshot()
             if usage.total_tokens > 0:
@@ -216,6 +235,67 @@ class HorizonOrchestrator:
                 )
 
             raise
+
+    @staticmethod
+    def _build_run_json_payload(
+        date: str,
+        run_at: datetime,
+        items: list[ContentItem],
+        summaries: dict[str, str],
+    ) -> dict[str, Any]:
+        export_language = "zh" if "zh" in summaries else next(iter(summaries), "en")
+        summary_exports = {
+            lang: {
+                "title": f"Horizon Summary: {date} ({lang.upper()})",
+                "markdown": markdown,
+            }
+            for lang, markdown in summaries.items()
+        }
+        exported_items = []
+        for rank, item in enumerate(items, start=1):
+            metadata = item.metadata
+            title = metadata.get(f"title_{export_language}") or item.title
+            summary = (
+                metadata.get(f"detailed_summary_{export_language}")
+                or metadata.get("detailed_summary")
+                or item.ai_summary
+                or ""
+            )
+            exported_items.append(
+                {
+                    "rank": rank,
+                    "title": str(title),
+                    "url": str(item.url),
+                    "summary": str(summary),
+                    "score": item.ai_score,
+                    "reason": item.ai_reason or "",
+                    "tags": list(item.ai_tags),
+                }
+            )
+
+        return {
+            "run_at": run_at.isoformat(),
+            "date": date,
+            "item_count": len(exported_items),
+            "summaries": summary_exports,
+            "items": exported_items,
+        }
+
+    @staticmethod
+    def _write_run_json_exports(
+        payload: dict[str, Any],
+        docs_dir: Path | str = Path("docs"),
+    ) -> dict[str, Path]:
+        docs_path = Path(docs_dir)
+        runs_dir = docs_path / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+
+        dated_path = runs_dir / f"{payload['date']}.json"
+        latest_path = docs_path / "latest.json"
+        body = json.dumps(payload, ensure_ascii=False, indent=2)
+        dated_path.write_text(body + "\n", encoding="utf-8")
+        latest_path.write_text(body + "\n", encoding="utf-8")
+        return {"dated": dated_path, "latest": latest_path}
 
     def _determine_time_window(self, force_hours: int = None) -> datetime:
         if force_hours:
